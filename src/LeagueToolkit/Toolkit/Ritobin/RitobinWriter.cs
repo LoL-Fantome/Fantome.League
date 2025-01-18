@@ -39,9 +39,11 @@ public sealed class RitobinWriter : IDisposable
         this._writer.GetStringBuilder().Clear();
 
         WriteHeader();
-        WriteFileType();
+        WriteFileType(bin);
         WriteVersion();
         WriteDependencies(bin.Dependencies);
+        if (bin.IsOverride)
+            WriteOverrides(bin.DataOverrides);
         WriteObjects(bin.Objects);
 
         return this._writer.ToString();
@@ -49,9 +51,9 @@ public sealed class RitobinWriter : IDisposable
 
     private void WriteHeader() => this._writer.WriteLine("#PROP_text");
 
-    private void WriteFileType()
+    private void WriteFileType(BinTree bin)
     {
-        WriteNamedProperty("type", new BinTreeString(0, "PROP"));
+        WriteNamedProperty("type", new BinTreeString(0, bin.IsOverride ? "PTCH" : "PROP"));
         this._writer.WriteLine();
     }
 
@@ -68,6 +70,46 @@ public sealed class RitobinWriter : IDisposable
             new BinTreeContainer(0, BinPropertyType.String, dependencies.Select(x => new BinTreeString(0, x)))
         );
         this._writer.WriteLine();
+    }
+
+    private void WriteOverrides(IReadOnlyList<BinTreeDataOverride> overrides)
+    {
+        void WritePatch(BinTreeDataOverride dataOverride)
+        {
+            this._writer.WriteLine($"0x{dataOverride.ObjectPathHash:x} = patch {{");
+            IncreaseDepth();
+
+            Indent();
+            WriteNamedProperty("path", new BinTreeString(0, dataOverride.PropertyPath));
+            this._writer.WriteLine();
+
+            Indent();
+            WriteNamedProperty("value", dataOverride.Property);
+            this._writer.WriteLine();
+
+            DecreaseDepth();
+            Indent();
+            this._writer.Write('}');
+        }
+
+        this._writer.Write("patches: map[hash,embed] = ");
+        if (overrides.Count is 0)
+        {
+            this._writer.Write("{}");
+            return;
+        }
+
+        this._writer.WriteLine('{');
+        IncreaseDepth();
+        foreach (BinTreeDataOverride dataOverride in overrides)
+        {
+            Indent();
+            WritePatch(dataOverride);
+            this._writer.WriteLine();
+        }
+        DecreaseDepth();
+        Indent();
+        this._writer.Write('}');
     }
 
     private void WriteObjects(IReadOnlyDictionary<uint, BinTreeObject> objects)
